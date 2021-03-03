@@ -1,0 +1,117 @@
+#include <TinyStepper_28BYJ_48.h>
+#include <TinyGPS++.h>
+#include <SoftwareSerial.h>
+
+// SETUP GPS OBJECT
+  static const int RXPin = 52, TXPin = 53;
+  static const uint32_t GPSBaud = 9600;
+  TinyGPSPlus gps;
+  SoftwareSerial ss(RXPin, TXPin);
+  
+// SETUP MOTOR CALCULTATIONS
+// Minimum value of steps on X axis is always 0
+  int const SMaxX = 2048;
+// Maximum value of steps on X axis
+  float GMinX = -3.261965;
+// Lowest value of possible X GPS data map is able to display
+  float GMaxX = -3.122525;
+// highest value of possible X GPS data map is able to display
+  float GRatio (float GMinX, float GMaxX, int SMaxX){
+    return (GMaxX - GMinX)/SMaxX;
+  }
+  float GPSLat (gps.location.lat(), 6)
+    //Return this in a format it can handle
+    
+// Ratio between GPS units and Steps
+  int GStepsFromZeroX (float GPSLat, float GRatio){
+    return GPSLat/GRatio;
+}
+// The absolute value of the GPS latitude data expressed in number of steps from 0
+  int SCurrentX = SMaxX;
+// Current position of X stepper motor, to be zeroed at start up.
+  int MoveX (int GStepsFromZeroX, int SCurrentX){
+    return GStepsFromZeroX - SCurrentX;
+}
+// Number of steps for motor to turn to move to match GPS latitude (in steps form 0). 
+
+
+
+//SETUP STEPPER MOTORS
+//X
+  const int MOTORX_IN1_PIN = 11;
+  const int MOTORX_IN2_PIN = 10;
+  const int MOTORX_IN3_PIN = 9;
+  const int MOTORX_IN4_PIN = 8;
+//Y
+  const int MOTORY_IN1_PIN = 7;
+  const int MOTORY_IN2_PIN = 6;
+  const int MOTORY_IN3_PIN = 5;
+  const int MOTORY_IN4_PIN = 4;
+  const int STEPS_PER_REVOLUTION = 2048;
+  TinyStepper_28BYJ_48 stepperX;
+  TinyStepper_28BYJ_48 stepperY;
+
+// PINS 
+  const int LED_PIN = 13; 
+  const int ZERO_BUTTON_X = 20;
+  
+void setup() 
+{
+// SETUP PINS
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(ZERO_BUTTON_X, INPUT_PULLUP);
+  
+// SERIAL MONITORING 
+  Serial.begin(115200);
+  ss.begin(GPSBaud);
+  Serial.println(F("GPS Serial data stream on 1152000"));
+  Serial.println(F("Using TinyGPS++ Library"));
+  Serial.println();
+
+// ZERO STEPPERS
+  // connect and configure the stepper motors to their IO pins
+  stepperX.connectToPins(MOTORX_IN1_PIN, MOTORX_IN2_PIN, MOTORX_IN3_PIN, MOTORX_IN4_PIN);
+  stepperY.connectToPins(MOTORY_IN1_PIN, MOTORY_IN2_PIN, MOTORY_IN3_PIN, MOTORY_IN4_PIN);
+  
+  // ZERO X  
+  stepperX.setSpeedInStepsPerSecond(256);
+  stepperX.setAccelerationInStepsPerSecondPerSecond(512);
+  boolean stopFlagX = false;
+  stepperX.setupRelativeMoveInSteps(-SMaxX);
+  
+ while(!stepperX.motionComplete())
+  {
+    stepperX.processMovement(); // move the motor by the above number of steps
+    
+        if ((digitalRead(ZERO_BUTTON_X) == LOW) && (stopFlagX == false))     // switch is pressed
+      {
+      stepperX.setupStop();
+      stopFlagX = true;
+      stepperX.setCurrentPositionInSteps(0);
+      SCurrentX = 0; //when the zeroing button is pressed, stop motor and set step counter to 0
+      }
+    
+  }
+
+}
+
+
+
+void loop() 
+{
+  
+ // Check GPS data stream is valid
+  while (ss.available() > 0)
+    if (gps.encode(ss.read()))
+      moveMotors();
+
+  if (millis() > 5000 && gps.charsProcessed() < 10)
+  {
+    Serial.println(F("No GPS detected: check wiring."));
+    while(true);
+    //FLASH LED AMBER
+      digitalWrite(LED_PIN, HIGH);   // turn the LED on (HIGH is the voltage level)
+      delay(500);                       // wait for a second
+      digitalWrite(LED_PIN, LOW);    // turn the LED off by making the voltage LOW
+      delay(500); 
+  }
